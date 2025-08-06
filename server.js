@@ -1,112 +1,47 @@
 const express = require('express');
-require('dotenv').config();
-const { GoogleSpreadsheet } = require('google-spreadsheet');
-const { JWT } = require('google-auth-library');
-const cors = require('cors');
+const { google } = require('googleapis');
+const bodyParser = require('body-parser');
+
 const app = express();
+app.use(bodyParser.json());
 
-app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://192.168.0.29:3000',
-    credentials: true
-}));
+// Читаем ключи из переменных окружения
+const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+const spreadsheetId = '1cF1EP1-HhBH_KoPZ2V4zVEkzXcXxVlmvJWlyTpf51Rw'; // <-- ID твоей таблицы
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Авторизация Google
+const auth = new google.auth.GoogleAuth({
+  credentials,
+  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+});
+const sheets = google.sheets({ version: 'v4', auth });
 
+// Маршрут для приёма данных
+app.post('/submit', async (req, res) => {
+  try {
+    const { name, phone, contact } = req.body;
+    const date = new Date().toLocaleString('ru-RU');
 
-async function writeToGoogleSheets(formData) {
-    try {
-        console.log('Записываем данные в Google Sheets:', formData);
-        
-        const serviceAccountAuth = new JWT({
-            email: process.env.SERVICE_ACCOUNT_EMAIL,
-            key: process.env.PRIVATE_KEY,
-            scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-        });
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: 'Аркуш1!A:D', // <-- название листа
+      valueInputOption: 'USER_ENTERED',
+      resource: {
+        values: [[name, phone, contact, date]],
+      },
+    });
 
-        const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth);
-        await doc.loadInfo();
-
-        let sheet = doc.sheetsByIndex[0];
-        if (!sheet) {
-            sheet = await doc.addSheet({ title: 'Данные формы' });
-        }
-
-        await sheet.loadHeaderRow();
-
-        // Обновляем заголовки
-        // if (!sheet.headerValues || sheet.headerValues.length === 0 || sheet.headerValues[0] === '') {
-        //     await sheet.setHeaderRow(['Имя', 'Номер телефона', 'Telegram / email']);
-        //     await sheet.loadHeaderRow();
-        // }
-
-        // Подготавливаем данные для записи
-        const rowData = {
-            'Имя': formData.name || '',
-            'Номер телефона': `'` + formData.phone || '',
-            'Telegram / email': formData.contact || ''
-        };
-        
-        console.log('Записываем строку:', rowData);
-
-        // Добавляем новую строку с данными
-        await sheet.addRow(rowData);
-
-        console.log('Данные успешно записаны в Google Sheets');
-        return true;
-
-    } catch (error) {
-        console.error('Ошибка записи в Google Sheets:', error);
-        throw error;
-    }
-}
-
-// API endpoint для отправки формы
-app.post('/api/submit', async (req, res) => {
-    try {
-        const { name, phone, contact, telegram } = req.body;
-        
-        console.log('Получены данные:', req.body);
-        
-        const phoneNumber = phone || req.body.telephone || '';
-        const contactInfo = contact || telegram || req.body.telegram || '';
-        
-        // Валидация данных
-        if (!name || !phoneNumber || !contactInfo) {
-            console.log('Валидация не прошла:', { name, phoneNumber, contactInfo });
-            return res.status(400).json({ 
-                error: 'Все поля обязательны для заполнения',
-                success: false,
-                received: { name, phone: phoneNumber, contact: contactInfo }
-            });
-        }
-
-        const formData = { 
-            name: name.trim(), 
-            phone: phoneNumber.trim(), 
-            contact: contactInfo.trim() 
-        };
-        
-        console.log('Обработанные данные формы:', formData);
-        
-        // Записываем в Google Sheets
-        await writeToGoogleSheets(formData);
-        
-        res.json({ 
-            success: true, 
-            message: 'Данные успешно сохранены!' 
-        });
-        
-    } catch (error) {
-        console.error('Ошибка обработки формы:', error);
-        res.status(500).json({ 
-            error: 'Ошибка сервера: ' + error.message,
-            success: false 
-        });
-    }
+    res.status(200).send({ message: 'Данные успешно добавлены!' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ error: 'Ошибка при записи в Google Sheets' });
+  }
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-    console.log(`Сервер запущен на http://localhost:${PORT}`);
+app.get('/', (req, res) => {
+  res.send('Сервер работает!');
 });
+
+// Запуск сервера
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Сервер запущен на порту ${PORT}`));
