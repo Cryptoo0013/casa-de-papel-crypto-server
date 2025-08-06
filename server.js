@@ -4,10 +4,8 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 
 const app = express();
-
-// Разрешаем CORS для всех доменов (можно ограничить при необходимости)
-app.use(cors());
 app.use(bodyParser.json());
+app.use(cors());
 
 // Читаем ключи из переменных окружения
 const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
@@ -20,20 +18,10 @@ const auth = new google.auth.GoogleAuth({
 });
 const sheets = google.sheets({ version: 'v4', auth });
 
-// Лог для старта
-console.log("Сервер запущен и готов принимать запросы...");
-
 // Маршрут для приёма данных
 app.post('/submit', async (req, res) => {
   try {
-    console.log("Получен запрос:", req.body);
-
     const { name, phone, contact } = req.body;
-    if (!name || !phone || !contact) {
-      console.log("Ошибка: пустые поля");
-      return res.status(400).send({ error: 'Все поля обязательны для заполнения' });
-    }
-
     const date = new Date().toLocaleString('ru-RU');
 
     await sheets.spreadsheets.values.append({
@@ -45,16 +33,24 @@ app.post('/submit', async (req, res) => {
       },
     });
 
-    console.log("Данные успешно добавлены:", [name, phone, contact, date]);
-    res.status(200).send({ success: true, message: 'Данные успешно добавлены!' });
-
+    res.status(200).send({ message: 'Данные успешно добавлены!' });
   } catch (error) {
-    console.error("Ошибка при записи в Google Sheets:", error);
-    res.status(500).send({ success: false, error: 'Ошибка при записи в Google Sheets' });
+    console.error('Ошибка при записи:', error);
+    res.status(500).send({ error: 'Ошибка при записи в Google Sheets' });
   }
 });
 
-// Проверочный маршрут
+// Тестовый маршрут для проверки доступа
+app.get('/check', async (req, res) => {
+  try {
+    const response = await sheets.spreadsheets.get({ spreadsheetId });
+    res.send({ title: response.data.properties.title, sheets: response.data.sheets.map(s => s.properties.title) });
+  } catch (error) {
+    console.error('Ошибка при доступе к таблице:', error);
+    res.status(500).send({ error: 'Нет доступа к таблице' });
+  }
+});
+
 app.get('/', (req, res) => {
   res.send('Сервер работает!');
 });
